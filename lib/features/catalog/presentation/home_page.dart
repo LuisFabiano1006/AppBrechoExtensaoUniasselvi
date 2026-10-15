@@ -1,7 +1,10 @@
+import 'package:flutter/material.dart';
 import 'package:app_brecho/core/snackbar/mostrar_snackbar.dart';
 import 'package:app_brecho/features/catalog/presentation/editar_perfil_tela.dart';
+import 'package:app_brecho/features/catalog/presentation/detalhes_produto_tela.dart';
+import 'package:app_brecho/features/catalog/domain/produto_modelo.dart';
+import 'package:app_brecho/features/catalog/services/produto_servico.dart';
 import 'package:app_brecho/features/auth/services/autenticacao_servico.dart';
-import 'package:flutter/material.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -11,34 +14,9 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final List<Map<String, dynamic>> _desapegosExemplo = [
-    {
-      'titulo': 'Jaqueta Jeans Vintage',
-      'preco': 'R\$ 79,90',
-      'tamanho': 'G',
-      'estado': 'Excelente',
-    },
-    {
-      'titulo': 'Bolsa de Couro Marrom',
-      'preco': 'R\$ 45,00',
-      'tamanho': 'Único',
-      'estado': 'Bom',
-    },
-    {
-      'titulo': 'Ténis Casual Verde',
-      'preco': 'R\$ 120,00',
-      'tamanho': '38',
-      'estado': 'Novo',
-    },
-    {
-      'titulo': 'Camisa de Linho Branca',
-      'preco': 'R\$ 55,00',
-      'tamanho': 'M',
-      'estado': 'Excelente',
-    },
-  ];
-
   final _autenticacaoServico = AutenticacaoServico();
+  final _produtoServico = ProdutoServico();
+  String? _categoriaSelecionada;
 
   @override
   void initState() {
@@ -49,11 +27,9 @@ class _HomePageState extends State<HomePage> {
   Future<void> _carregarDadosUsuario() async {
     final usuario = _autenticacaoServico.usuarioAtual;
     if (usuario != null) {
-      // Recarrega imediatamente
       await usuario.reload();
       if (mounted) setState(() {});
 
-      // Se por latência da rede o nome ainda estiver vazio, faz uma nova checagem após 800ms
       if (usuario.displayName == null || usuario.displayName!.isEmpty) {
         await Future.delayed(const Duration(milliseconds: 800));
         await _autenticacaoServico.usuarioAtual?.reload();
@@ -114,6 +90,14 @@ class _HomePageState extends State<HomePage> {
         : 'Minha Conta';
     final fotoUrl = usuario?.photoURL;
 
+    final categorias = [
+      'Casacos',
+      'Calçados',
+      'Acessórios',
+      'Camisas',
+      'Calças',
+    ];
+
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(title: const Text('Brechó Comunitário')),
@@ -152,12 +136,11 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Botão "Editar perfil" estilizado dentro do tema
                   Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () async {
-                        Navigator.of(context);
+                        Navigator.of(context).pop();
                         final atualizou = await Navigator.push<bool>(
                           context,
                           MaterialPageRoute(
@@ -238,32 +221,27 @@ class _HomePageState extends State<HomePage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Filtro por Categoria
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: [
-                  FilterChip(
-                    label: const Text('Casacos'),
-                    onSelected: (val) {},
-                  ),
-                  const SizedBox(width: 8),
-                  FilterChip(
-                    label: const Text('Calçado'),
-                    onSelected: (val) {},
-                  ),
-                  const SizedBox(width: 8),
-                  FilterChip(
-                    label: const Text('Tamanho M'),
-                    onSelected: (val) {},
-                  ),
-                  const SizedBox(width: 8),
-                  FilterChip(
-                    label: const Text('Acessórios'),
-                    onSelected: (val) {},
-                  ),
-                ],
+                children: categorias.map((cat) {
+                  final isSelected = _categoriaSelecionada == cat;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: FilterChip(
+                      selected: isSelected,
+                      label: Text(cat),
+                      onSelected: (selected) {
+                        setState(() {
+                          _categoriaSelecionada = selected ? cat : null;
+                        });
+                      },
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ),
@@ -274,83 +252,132 @@ class _HomePageState extends State<HomePage> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
+
+          // Lista de Produtos do Cloud Firestore em Tempo Real
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                childAspectRatio: 0.82,
+            child: StreamBuilder<List<ProdutoModelo>>(
+              stream: _produtoServico.obterProdutosStream(
+                categoriaFiltro: _categoriaSelecionada,
               ),
-              itemCount: _desapegosExemplo.length,
-              itemBuilder: (context, index) {
-                final produto = _desapegosExemplo[index];
-                return Card(
-                  color: theme.colorScheme.surfaceContainer,
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        height: 115,
-                        width: double.infinity,
-                        color: theme.colorScheme.secondary.withValues(
-                          alpha: 0.15,
-                        ),
-                        child: Icon(
-                          Icons.checkroom,
-                          size: 40,
-                          color: theme.colorScheme.secondary,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Erro ao carregar desapegos: ${snapshot.error}',
+                    ),
+                  );
+                }
+
+                final produtos = snapshot.data ?? [];
+
+                if (produtos.isEmpty) {
+                  return const Center(
+                    child: Text('Nenhum item disponível no momento.'),
+                  );
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.82,
+                  ),
+                  itemCount: produtos.length,
+                  itemBuilder: (context, index) {
+                    final produto = produtos[index];
+                    return Card(
+                      color: theme.colorScheme.surfaceContainer,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  DetalhesProdutoTela(produto: produto),
+                            ),
+                          );
+                        },
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              produto['titulo'],
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              produto['preco'],
-                              style: TextStyle(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
+                              height: 115,
+                              width: double.infinity,
+                              color: theme.colorScheme.secondary.withValues(
+                                alpha: 0.15,
                               ),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.primary.withValues(
-                                  alpha: 0.1,
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'Tam: ${produto['tamanho']}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              child: produto.imagemUrl.isNotEmpty
+                                  ? Image.network(
+                                      produto.imagemUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (ctx, err, stack) => Icon(
+                                        Icons.checkroom,
+                                        size: 40,
+                                        color: theme.colorScheme.secondary,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.checkroom,
+                                      size: 40,
+                                      color: theme.colorScheme.secondary,
+                                    ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    produto.nome,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    produto.precoFormatado,
+                                    style: TextStyle(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Tam: ${produto.tamanho}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: theme.colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             ),
