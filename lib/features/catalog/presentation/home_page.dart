@@ -16,12 +16,35 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _autenticacaoServico = AutenticacaoServico();
   final _produtoServico = ProdutoServico();
+  
+  // Estado para os filtros
   String? _categoriaSelecionada;
+  String _termoBusca = '';
+  final _buscaController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _carregarDadosUsuario();
+  }
+
+  @override
+  void dispose() {
+    _buscaController.dispose();
+    super.dispose();
+  }
+
+  /// Função auxiliar compacta para remover acentos usando Regular Expressions
+  String _removerAcentos(String texto) {
+    var resultado = texto.toLowerCase();
+    resultado = resultado.replaceAll(RegExp(r'[àáâãäå]'), 'a');
+    resultado = resultado.replaceAll(RegExp(r'[èéêë]'), 'e');
+    resultado = resultado.replaceAll(RegExp(r'[ìíîï]'), 'i');
+    resultado = resultado.replaceAll(RegExp(r'[òóôõö]'), 'o');
+    resultado = resultado.replaceAll(RegExp(r'[ùúûü]'), 'u');
+    resultado = resultado.replaceAll(RegExp(r'[ç]'), 'c');
+    resultado = resultado.replaceAll(RegExp(r'[ñ]'), 'n');
+    return resultado;
   }
 
   Future<void> _carregarDadosUsuario() async {
@@ -221,9 +244,47 @@ class _HomePageState extends State<HomePage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Filtro por Categoria
+          // BARRA DE PESQUISA POR TEXTO INSENSÍVEL A ACENTOS E CAIXA
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: _buscaController,
+              onChanged: (val) {
+                setState(() {
+                  _termoBusca = _removerAcentos(val.trim());
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Pesquisar peças, tamanhos, valores...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _termoBusca.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _buscaController.clear();
+                            _termoBusca = '';
+                          });
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: theme.colorScheme.surfaceContainer,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+
+          // Filtro por Categoria (FilterChip MD3)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -245,15 +306,16 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ),
+
           const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
             child: Text(
               'Roupas e Acessórios Recentes',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
 
-          // Lista de Produtos do Cloud Firestore em Tempo Real
+          // Lista de Produtos com Filtro Insensível a Acentos e Caixa Alta/Baixa
           Expanded(
             child: StreamBuilder<List<ProdutoModelo>>(
               stream: _produtoServico.obterProdutosStream(
@@ -272,11 +334,28 @@ class _HomePageState extends State<HomePage> {
                   );
                 }
 
-                final produtos = snapshot.data ?? [];
+                final todosProdutos = snapshot.data ?? [];
+
+                // FILTRAGEM TOLERANTE A ACENTOS E CAIXA ALTA/BAIXA
+                final produtos = todosProdutos.where((p) {
+                  if (_termoBusca.isEmpty) return true;
+
+                  final nome = _removerAcentos(p.nome);
+                  final descricao = _removerAcentos(p.descricao);
+                  final tamanho = _removerAcentos(p.tamanho);
+                  final categoria = _removerAcentos(p.categoria);
+                  final preco = p.preco.toString();
+
+                  return nome.contains(_termoBusca) ||
+                      descricao.contains(_termoBusca) ||
+                      tamanho.contains(_termoBusca) ||
+                      categoria.contains(_termoBusca) ||
+                      preco.contains(_termoBusca);
+                }).toList();
 
                 if (produtos.isEmpty) {
                   return const Center(
-                    child: Text('Nenhum item disponível no momento.'),
+                    child: Text('Nenhum item encontrado para esta busca.'),
                   );
                 }
 
